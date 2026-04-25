@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "IPTVAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "IPTVAbility_label",
+      "value": "label"
+    }
+  ]
+}

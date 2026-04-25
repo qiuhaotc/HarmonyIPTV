@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "D:\\Code\\HarmonyOS\\SignedInfo\\default_HarmonyIPTV_ut5tiCA04N_LjauFPyd42S5sZ7swR7MB2UHRVlwdVPc=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B19704A864B4CC7BFD7C11ECCFC4E1B98FDDD2464C54DE58371482A521471AC3C40978B83CDE743",
+          "profile": "D:\\Code\\HarmonyOS\\SignedInfo\\default_HarmonyIPTV_ut5tiCA04N_LjauFPyd42S5sZ7swR7MB2UHRVlwdVPc=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "D:\\Code\\HarmonyOS\\SignedInfo\\default_HarmonyIPTV_ut5tiCA04N_LjauFPyd42S5sZ7swR7MB2UHRVlwdVPc=.p12",
+          "storePassword": "0000001BC89516FC47D9E1D505632AD29A2415F139B75F3FB1EE989C6E9AB8696A4DFC2D5BF7D1378691B2"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "6.0.0(20)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "IPTV",
+      "srcPath": "./IPTV",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

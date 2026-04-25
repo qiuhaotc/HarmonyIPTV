@@ -1,0 +1,53 @@
+{
+  "module": {
+    "name": "IPTV",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "IPTVAbility",
+    "deviceTypes": [
+      "phone",
+      "tablet",
+      "2in1",
+      "tv"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "IPTVAbility",
+        "srcEntry": "./ets/iptvability/IPTVAbility.ets",
+        "description": "$string:IPTVAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:IPTVAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "IPTVBackupAbility",
+        "srcEntry": "./ets/iptvbackupability/IPTVBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ],
+      }
+    ]
+  }
+}
