@@ -2,6 +2,14 @@
   "module": {
     "name": "IPTV",
     "type": "entry",
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
+      }
+    ],
     "description": "$string:module_desc",
     "mainElement": "IPTVAbility",
     "deviceTypes": [
