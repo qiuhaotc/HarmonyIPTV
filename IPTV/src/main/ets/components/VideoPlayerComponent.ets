@@ -1,15 +1,9 @@
-import media from '@ohos.multimedia.media';
+import { IjkMediaPlayer } from "@ohos/ijkplayer";
+import type { OnPreparedListener } from "@ohos/ijkplayer";
+import type { OnVideoSizeChangedListener } from "@ohos/ijkplayer";
+import type { OnErrorListener } from "@ohos/ijkplayer";
+import type { OnInfoListener } from "@ohos/ijkplayer";
 import { Channel } from '../models/Channel';
-import { HttpTsStreamer } from '../utils/HttpTsStreamer';
-
-function isHlsUrl(url: string): boolean {
-  const lower = url.toLowerCase();
-  return lower.includes('.m3u8') || lower.includes('.m3u');
-}
-
-function isFlvUrl(url: string): boolean {
-  return url.toLowerCase().includes('.flv');
-}
 
 @Component
 export struct VideoPlayerComponent {
@@ -18,195 +12,105 @@ export struct VideoPlayerComponent {
   @State private isLoading: boolean = false;
   @State private errorMsg: string = '';
   @State private showControls: boolean = true;
-  @State private volume: number = 100;
-  @State private bufferInfo: string = '';
-  private avPlayer: media.AVPlayer | null = null;
-  private xComponentController: XComponentController = new XComponentController();
-  private surfaceId: string = '';
+  private mContext: object | undefined = undefined;
+  private mIjkMediaPlayer: IjkMediaPlayer = new IjkMediaPlayer();
   private controlsTimer: number = -1;
   private isSurfaceReady: boolean = false;
-  private tsStreamer: HttpTsStreamer | null = null;
   onFullScreenRequest: () => void = () => {};
 
   onChannelChanged() {
     if (this.currentChannel && this.isSurfaceReady) {
-      this.initPlayer(this.currentChannel.url);
+      this.startPlay(this.currentChannel.url);
     }
   }
 
   aboutToDisappear() {
-    this.releasePlayer();
     if (this.controlsTimer !== -1) {
       clearTimeout(this.controlsTimer);
     }
+    this.mIjkMediaPlayer.release();
   }
 
-  private setupPlayerListeners(player: media.AVPlayer): void {
-    player.on('stateChange', async (state: string) => {
-      switch (state) {
-        case 'initialized':
-          if (this.avPlayer && this.surfaceId) {
-            this.avPlayer.surfaceId = this.surfaceId;
-            await this.avPlayer.prepare();
-          }
-          break;
-        case 'prepared':
-          this.isLoading = false;
-          this.bufferInfo = '';
-          if (this.avPlayer) {
-            await this.avPlayer.play();
-          }
-          break;
-        case 'playing':
-          this.isPlaying = true;
-          this.isLoading = false;
-          break;
-        case 'paused':
-          this.isPlaying = false;
-          break;
-        case 'stopped':
-        case 'idle':
-          this.isPlaying = false;
-          break;
-        case 'error':
-          this.isLoading = false;
-          this.isPlaying = false;
-          this.errorMsg = 'æ’­æ”¾å‡ºé”™ï¼Œè¯·æ£€æŸ¥ç½‘ç»œæˆ–é¢‘é“åœ°å€';
-          break;
-        default:
-          break;
-      }
-    });
-
-    player.on('error', (err) => {
-      this.isLoading = false;
-      this.isPlaying = false;
-      const msg = err.message || '';
-      if (msg.includes('Unsupported') || msg.includes('unsupport')) {
-        this.errorMsg = 'æ ¼å¼ä¸æ”¯æŒ\nè¯¥é¢‘é“æµæ— æ³•æ’­æ”¾\nè¯·å°è¯•ä½¿ç”¨HLS(m3u8)æ ¼å¼çš„æº';
-      } else if (msg.includes('timeout') || msg.includes('connect') || msg.includes('IO')) {
-        this.errorMsg = 'è¿æ¥å¤±è´¥\nè¯·æ£€æŸ¥ç½‘ç»œæ˜¯å¦åœ¨IPTVä¸“ç½‘å†…';
-      } else if (msg) {
-        this.errorMsg = `æ’­æ”¾é”™è¯¯: ${msg.substring(0, 80)}`;
-      } else {
-        this.errorMsg = 'æ’­æ”¾å¤±è´¥ï¼Œè¯·é‡è¯•';
-      }
-    });
-  }
-
-  private async initPlayer(url: string): Promise<void> {
-    await this.releasePlayer();
+  private startPlay(url: string): void {
     this.isLoading = true;
+    this.isPlaying = false;
     this.errorMsg = '';
-    this.bufferInfo = '';
 
     try {
-      this.avPlayer = await media.createAVPlayer();
-      this.setupPlayerListeners(this.avPlayer);
-
-      if (isHlsUrl(url) || isFlvUrl(url)) {
-        // HLS / HTTP-FLV: directly supported by AVPlayer
-        this.avPlayer.url = url;
-      } else {
-        // Raw HTTP MPEG-TS stream: use dataSrc + HTTP streaming
-        await this.startDataSrcPlayer(url);
-      }
+      this.mIjkMediaPlayer.reset();
     } catch {
-      this.isLoading = false;
-      this.errorMsg = 'æ’­æ”¾å™¨åˆå§‹åŒ–å¤±è´¥';
-    }
-  }
-
-  private async startDataSrcPlayer(url: string): Promise<void> {
-    if (!this.avPlayer) {
-      return;
+      // ignore if not yet initialized
     }
 
-    // Start HTTP streaming download
-    this.tsStreamer = new HttpTsStreamer();
-    this.tsStreamer.start(url);
+    this.mIjkMediaPlayer.setContext(this.mContext!, 'iptv_player');
+    this.mIjkMediaPlayer.native_setup();
 
-    // Wait for initial buffer (up to 8 seconds for 512KB)
-    this.bufferInfo = 'æ­£åœ¨ç¼“å†²...';
-    const waitResult = await this.waitForBuffer(512 * 1024, 8000);
+    // IPTVÖ±²¥µÍÑÓ³ÙÅäÖÃ
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", "1");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", "0");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", "5");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", "3000");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", "1");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", "100");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", "10000000");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "connect_timeout", "10000000");
 
-    if (!waitResult || this.tsStreamer.hasError || !this.avPlayer) {
-      this.isLoading = false;
-      this.errorMsg = 'è¿æ¥å¤±è´¥\næ— æ³•è·å–æµæ•°æ®ï¼Œè¯·æ£€æŸ¥ç½‘ç»œæˆ–åœ°å€';
-      if (this.tsStreamer) {
-        this.tsStreamer.stop();
-        this.tsStreamer = null;
-      }
-      return;
-    }
-
-    const streamer = this.tsStreamer;
-    const dataSrc: media.AVDataSrcDescriptor = {
-      fileSize: -1, // -1 = live stream / unknown size
-      callback: (buffer: ArrayBuffer, length: number): number => {
-        return streamer.read(buffer, length);
+    const onPrepared: OnPreparedListener = {
+      onPrepared: () => {
+        this.isLoading = false;
       }
     };
+    this.mIjkMediaPlayer.setOnPreparedListener(onPrepared);
 
-    this.avPlayer.dataSrc = dataSrc;
-  }
-
-  private waitForBuffer(targetBytes: number, timeoutMs: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
-      const checkBuffer = () => {
-        if (!this.tsStreamer) {
-          resolve(false);
-          return;
-        }
-        if (this.tsStreamer.hasError) {
-          resolve(false);
-          return;
-        }
-        if (this.tsStreamer.buffered() >= targetBytes) {
-          resolve(true);
-          return;
-        }
-        if (Date.now() - startTime >= timeoutMs) {
-          // Timeout but we have some data - try anyway
-          resolve(this.tsStreamer.buffered() > 0);
-          return;
-        }
-        setTimeout(checkBuffer, 200);
-      };
-      checkBuffer();
-    });
-  }
-
-  private async releasePlayer(): Promise<void> {
-    if (this.tsStreamer) {
-      this.tsStreamer.stop();
-      this.tsStreamer = null;
-    }
-    if (this.avPlayer) {
-      try {
-        await this.avPlayer.release();
-      } catch {
-        // ignore
+    const onVideoSizeChanged: OnVideoSizeChangedListener = {
+      onVideoSizeChanged: (width: number, height: number, sar_num: number, sar_den: number) => {
+        this.isLoading = false;
       }
-      this.avPlayer = null;
-    }
-    this.isPlaying = false;
-    this.isLoading = false;
+    };
+    this.mIjkMediaPlayer.setOnVideoSizeChangedListener(onVideoSizeChanged);
+
+    const onInfo: OnInfoListener = {
+      onInfo: (what: number, extra: number) => {
+        if (what === 3) { // MEDIA_INFO_VIDEO_RENDERING_START
+          this.isLoading = false;
+          this.isPlaying = true;
+        }
+      }
+    };
+    this.mIjkMediaPlayer.setOnInfoListener(onInfo);
+
+    const onError: OnErrorListener = {
+      onError: (what: number, extra: number) => {
+        this.isLoading = false;
+        this.isPlaying = false;
+        if (extra === -10000 || what === -1004) {
+          this.errorMsg = 'Á¬½ÓÊ§°Ü\nÇë¼ì²éÍøÂç»òÆµµÀµØÖ·ÊÇ·ñÕıÈ·';
+        } else if (extra === -1007 || extra === -1010) {
+          this.errorMsg = '¸ñÊ½²»Ö§³Ö\nÇë¸ü»»²¥·ÅÔ´';
+        } else {
+          this.errorMsg = `²¥·ÅÊ§°Ü (${what}/${extra})\nÇë¼ì²éÍøÂçÁ¬½ÓºÍÆµµÀµØÖ·`;
+        }
+      }
+    };
+    this.mIjkMediaPlayer.setOnErrorListener(onError);
+
+    this.mIjkMediaPlayer.setMessageListener();
+    this.mIjkMediaPlayer.setDataSource(url);
+    this.mIjkMediaPlayer.prepareAsync();
+    this.mIjkMediaPlayer.start();
   }
 
   async playChannel(channel: Channel): Promise<void> {
-    await this.initPlayer(channel.url);
+    this.startPlay(channel.url);
   }
 
   private togglePlayPause(): void {
-    if (!this.avPlayer) {
-      return;
-    }
     if (this.isPlaying) {
-      this.avPlayer.pause();
+      this.mIjkMediaPlayer.pause();
+      this.isPlaying = false;
     } else {
-      this.avPlayer.play();
+      this.mIjkMediaPlayer.start();
+      this.isPlaying = true;
     }
   }
 
@@ -223,31 +127,34 @@ export struct VideoPlayerComponent {
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      // Video surface
+      // ijkplayer XComponent surface
       XComponent({
         id: 'iptv_player',
         type: XComponentType.SURFACE,
-        controller: this.xComponentController
+        libraryname: 'ijkplayer_napi'
       })
         .width('100%')
         .height('100%')
         .backgroundColor(Color.Black)
-        .onLoad(() => {
-          this.surfaceId = this.xComponentController.getXComponentSurfaceId();
+        .onLoad((context) => {
+          this.mContext = context;
           this.isSurfaceReady = true;
           if (this.currentChannel) {
-            this.initPlayer(this.currentChannel.url);
+            this.startPlay(this.currentChannel.url);
           }
         })
+        .onDestroy(() => {
+          this.mIjkMediaPlayer.release();
+        })
 
-      // Loading / buffering indicator
+      // Loading indicator
       if (this.isLoading) {
         Column() {
           LoadingProgress()
             .width(48)
             .height(48)
             .color('#4FC3F7')
-          Text(this.bufferInfo || 'åŠ è½½ä¸­...')
+          Text('¼ÓÔØÖĞ...')
             .fontSize(14)
             .fontColor('#CCCCCC')
             .margin({ top: 10 })
@@ -261,7 +168,7 @@ export struct VideoPlayerComponent {
       // Error message
       if (this.errorMsg) {
         Column() {
-          Text('âš ï¸')
+          Text('??')
             .fontSize(48)
           Text(this.errorMsg)
             .fontSize(14)
@@ -269,14 +176,14 @@ export struct VideoPlayerComponent {
             .margin({ top: 10 })
             .textAlign(TextAlign.Center)
             .padding({ left: 20, right: 20 })
-          Button('é‡è¯•')
+          Button('ÖØÊÔ')
             .margin({ top: 16 })
             .backgroundColor('#4FC3F7')
             .fontColor(Color.White)
             .height(36)
             .onClick(() => {
               if (this.currentChannel) {
-                this.playChannel(this.currentChannel);
+                this.startPlay(this.currentChannel.url);
               }
             })
         }
@@ -286,12 +193,12 @@ export struct VideoPlayerComponent {
         .alignItems(HorizontalAlign.Center)
       }
 
-      // No channel placeholder
+      // No channel selected placeholder
       if (!this.currentChannel && !this.isLoading && !this.errorMsg) {
         Column() {
-          Text('ğŸ“º')
+          Text('??')
             .fontSize(64)
-          Text('è¯·é€‰æ‹©é¢‘é“')
+          Text('ÇëÑ¡ÔñÆµµÀ')
             .fontSize(16)
             .fontColor('#888888')
             .margin({ top: 12 })
@@ -306,15 +213,13 @@ export struct VideoPlayerComponent {
       // Controls overlay
       if (this.showControls && this.currentChannel) {
         Column() {
-          // Channel info bar (top)
           Row() {
             Text(this.currentChannel.name)
               .fontSize(16)
               .fontColor(Color.White)
               .fontWeight(FontWeight.Bold)
               .layoutWeight(1)
-            // Full screen button
-            Text('â¤¢')
+            Text('?')
               .fontSize(22)
               .fontColor(Color.White)
               .padding(8)
@@ -328,26 +233,16 @@ export struct VideoPlayerComponent {
             colors: [['#AA000000', 0.0], ['#00000000', 1.0]]
           })
 
-          Blank()
-            .layoutWeight(1)
+          Blank().layoutWeight(1)
 
-          // Bottom control bar
           Row() {
-            // Play/Pause button
-            Text(this.isPlaying ? 'â¸' : 'â–¶')
+            Text(this.isPlaying ? '?' : '?')
               .fontSize(24)
               .fontColor(Color.White)
               .padding(10)
               .focusable(true)
               .onClick(() => this.togglePlayPause())
-
             Blank().layoutWeight(1)
-
-            // Volume indicator
-            Text(`ğŸ”Š ${this.volume}%`)
-              .fontSize(13)
-              .fontColor('#CCCCCC')
-              .padding({ left: 8, right: 8 })
           }
           .width('100%')
           .padding({ left: 8, right: 8, bottom: 8 })

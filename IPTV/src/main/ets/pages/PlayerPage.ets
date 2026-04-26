@@ -1,8 +1,11 @@
 import router from '@ohos.router';
-import media from '@ohos.multimedia.media';
 import window from '@ohos.window';
 import common from '@ohos.app.ability.common';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import { IjkMediaPlayer } from "@ohos/ijkplayer";
+import type { OnPreparedListener } from "@ohos/ijkplayer";
+import type { OnErrorListener } from "@ohos/ijkplayer";
+import type { OnInfoListener } from "@ohos/ijkplayer";
 
 interface PlayerRouterParams {
   channelName: string;
@@ -18,9 +21,8 @@ struct PlayerPage {
   @State isLoading: boolean = true;
   @State errorMsg: string = '';
   @State showControls: boolean = true;
-  private avPlayer: media.AVPlayer | null = null;
-  private xComponentController: XComponentController = new XComponentController();
-  private surfaceId: string = '';
+  private mContext: object | undefined = undefined;
+  private mIjkMediaPlayer: IjkMediaPlayer = new IjkMediaPlayer();
   private controlsTimer: number = -1;
   private windowObj: window.Window | null = null;
 
@@ -36,7 +38,7 @@ struct PlayerPage {
 
   async aboutToDisappear() {
     this.clearControlsTimer();
-    await this.releasePlayer();
+    this.mIjkMediaPlayer.release();
     await this.exitFullScreen();
   }
 
@@ -62,80 +64,75 @@ struct PlayerPage {
     }
   }
 
-  private async initPlayer(url: string): Promise<void> {
-    await this.releasePlayer();
+  private startPlay(url: string): void {
     this.isLoading = true;
+    this.isPlaying = false;
     this.errorMsg = '';
+
     try {
-      this.avPlayer = await media.createAVPlayer();
-      this.avPlayer.on('stateChange', async (state: string) => {
-        switch (state) {
-          case 'initialized':
-            if (this.avPlayer && this.surfaceId) {
-              this.avPlayer.surfaceId = this.surfaceId;
-              await this.avPlayer.prepare();
-            }
-            break;
-          case 'prepared':
-            this.isLoading = false;
-            if (this.avPlayer) {
-              await this.avPlayer.play();
-            }
-            break;
-          case 'playing':
-            this.isPlaying = true;
-            this.isLoading = false;
-            break;
-          case 'paused':
-            this.isPlaying = false;
-            break;
-          case 'error':
-            this.isLoading = false;
-            this.isPlaying = false;
-            this.errorMsg = '播放出错，请检查频道地址';
-            break;
-          default:
-            break;
+      this.mIjkMediaPlayer.reset();
+    } catch {
+      // ignore
+    }
+
+    this.mIjkMediaPlayer.setContext(this.mContext!, 'fullscreen_player');
+    this.mIjkMediaPlayer.native_setup();
+
+    // IPTVֱ�����ӳ�����
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", "1");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", "0");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", "5");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", "3000");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", "1");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", "100");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", "10000000");
+    this.mIjkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "connect_timeout", "10000000");
+
+    const onPrepared: OnPreparedListener = {
+      onPrepared: () => {
+        this.isLoading = false;
+      }
+    };
+    this.mIjkMediaPlayer.setOnPreparedListener(onPrepared);
+
+    const onInfo: OnInfoListener = {
+      onInfo: (what: number, extra: number) => {
+        if (what === 3) { // MEDIA_INFO_VIDEO_RENDERING_START
+          this.isLoading = false;
+          this.isPlaying = true;
         }
-      });
-      this.avPlayer.on('error', (err) => {
+      }
+    };
+    this.mIjkMediaPlayer.setOnInfoListener(onInfo);
+
+    const onError: OnErrorListener = {
+      onError: (what: number, extra: number) => {
         this.isLoading = false;
         this.isPlaying = false;
-        const msg = err.message || '';
-        if (msg.includes('Unsupported') || msg.includes('unsupport')) {
-          this.errorMsg = '格式不支持：该频道可能是专网IPTV或私有协议\n需在运营商IPTV网络内才能收看';
-        } else if (msg.includes('timeout') || msg.includes('connect')) {
-          this.errorMsg = '连接超时：请检查是否在IPTV专网内';
+        if (extra === -10000 || what === -1004) {
+          this.errorMsg = '����ʧ��\n���������Ƶ����ַ';
+        } else if (extra === -1007 || extra === -1010) {
+          this.errorMsg = '��ʽ��֧��\n���������Դ';
         } else {
-          this.errorMsg = `播放错误: ${msg}`;
+          this.errorMsg = `����ʧ�� (${what}/${extra})\n���������Ƶ����ַ`;
         }
-      });
-      this.avPlayer.url = url;
-    } catch {
-      this.isLoading = false;
-      this.errorMsg = '播放器初始化失败';
-    }
-  }
-
-  private async releasePlayer(): Promise<void> {
-    if (this.avPlayer) {
-      try {
-        await this.avPlayer.release();
-      } catch {
-        // ignore
       }
-      this.avPlayer = null;
-    }
+    };
+    this.mIjkMediaPlayer.setOnErrorListener(onError);
+
+    this.mIjkMediaPlayer.setMessageListener();
+    this.mIjkMediaPlayer.setDataSource(url);
+    this.mIjkMediaPlayer.prepareAsync();
+    this.mIjkMediaPlayer.start();
   }
 
   private togglePlayPause(): void {
-    if (!this.avPlayer) {
-      return;
-    }
     if (this.isPlaying) {
-      this.avPlayer.pause();
+      this.mIjkMediaPlayer.pause();
+      this.isPlaying = false;
     } else {
-      this.avPlayer.play();
+      this.mIjkMediaPlayer.start();
+      this.isPlaying = true;
     }
     this.showControlsTemporarily();
   }
@@ -162,20 +159,23 @@ struct PlayerPage {
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      // Video surface
+      // ijkplayer XComponent surface
       XComponent({
         id: 'fullscreen_player',
         type: XComponentType.SURFACE,
-        controller: this.xComponentController
+        libraryname: 'ijkplayer_napi'
       })
         .width('100%')
         .height('100%')
         .backgroundColor(Color.Black)
-        .onLoad(() => {
-          this.surfaceId = this.xComponentController.getXComponentSurfaceId();
+        .onLoad((context) => {
+          this.mContext = context;
           if (this.channelUrl) {
-            this.initPlayer(this.channelUrl);
+            this.startPlay(this.channelUrl);
           }
+        })
+        .onDestroy(() => {
+          this.mIjkMediaPlayer.release();
         })
 
       // Loading
@@ -185,7 +185,7 @@ struct PlayerPage {
             .width(60)
             .height(60)
             .color('#4FC3F7')
-          Text('加载中...')
+          Text('������...')
             .fontSize(16)
             .fontColor('#CCCCCC')
             .margin({ top: 12 })
@@ -199,7 +199,7 @@ struct PlayerPage {
       // Error
       if (this.errorMsg) {
         Column() {
-          Text('⚠️')
+          Text('??')
             .fontSize(56)
           Text(this.errorMsg)
             .fontSize(16)
@@ -208,13 +208,13 @@ struct PlayerPage {
             .textAlign(TextAlign.Center)
             .padding({ left: 24, right: 24 })
           Row() {
-            Button('重试')
+            Button('����')
               .height(40)
               .backgroundColor('#4FC3F7')
               .fontColor(Color.White)
               .margin({ right: 12 })
-              .onClick(() => this.initPlayer(this.channelUrl))
-            Button('返回')
+              .onClick(() => this.startPlay(this.channelUrl))
+            Button('����')
               .height(40)
               .backgroundColor('#444455')
               .fontColor('#CCCCCC')
@@ -231,15 +231,13 @@ struct PlayerPage {
       // Controls overlay
       if (this.showControls) {
         Column() {
-          // Top bar
           Row() {
-            Text('←')
+            Text('��')
               .fontSize(24)
               .fontColor(Color.White)
               .padding({ left: 16, right: 12, top: 12, bottom: 12 })
               .focusable(true)
               .onClick(() => router.back())
-
             Text(this.channelName)
               .fontSize(18)
               .fontColor(Color.White)
@@ -254,9 +252,8 @@ struct PlayerPage {
 
           Blank().layoutWeight(1)
 
-          // Bottom bar
           Row() {
-            Text(this.isPlaying ? '⏸' : '▶')
+            Text(this.isPlaying ? '?' : '?')
               .fontSize(28)
               .fontColor(Color.White)
               .padding(12)
@@ -298,7 +295,6 @@ struct PlayerPage {
             }
             break;
           default:
-            this.showControlsTemporarily();
             break;
         }
       }

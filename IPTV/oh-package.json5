@@ -5,6 +5,8 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "@ohos/ijkplayer": "^2.0.6-rc.6"
+  }
 }
 
